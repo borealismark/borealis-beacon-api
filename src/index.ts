@@ -25,10 +25,10 @@ setInterval(() => {
   }
 }, 3600000); // run every hour
 
-// CORS
+// CORS - allow Beacon frontend + all Borealis properties
 const allowedOrigins = (
   process.env.ALLOWED_ORIGINS ||
-  "http://localhost:3000,https://borealisterminal.com,https://borealisprotocol.ai"
+  "http://localhost:3000,http://localhost:3001,https://borealisterminal.com,https://borealisprotocol.ai,https://borealismark.com,https://borealisacademy.com,https://beacon.borealisprotocol.ai"
 ).split(",").map((o) => o.trim());
 
 app.use(
@@ -58,12 +58,24 @@ app.get("/health", (_req: Request, res: Response) => {
   });
 });
 
-// Rate limiter for scan endpoint
+// Rate limiter for scan endpoint - generous for free product
 const scanLimiter = rateLimit({
   windowMs: parseInt(process.env.SCAN_RATE_LIMIT_WINDOW_MS || "900000", 10), // 15 min
-  max: parseInt(process.env.SCAN_RATE_LIMIT_MAX || "10", 10),
+  max: parseInt(process.env.SCAN_RATE_LIMIT_MAX || "30", 10),
   message: {
-    error: "Too many scan requests. Free tier allows 10 scans per 15 minutes.",
+    error: "Too many scan requests. Please wait a few minutes and try again.",
+    code: "RATE_LIMITED",
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// Rate limiter for BTS key claims - stricter (prevent abuse)
+const claimLimiter = rateLimit({
+  windowMs: 3600000, // 1 hour
+  max: 5,
+  message: {
+    error: "Too many key claims. Please try again later.",
     code: "RATE_LIMITED",
   },
   standardHeaders: true,
@@ -157,6 +169,200 @@ app.get("/v1/badge/:id", (req: Request, res: Response) => {
   res.setHeader("Content-Type", "image/svg+xml");
   res.setHeader("Cache-Control", "public, max-age=3600");
   res.send(svg);
+});
+
+// POST /v1/claim-key - Proxy BTS key claim to main API
+const MAIN_API_URL = process.env.MAIN_API_URL || "https://borealismark-api.onrender.com";
+
+app.post("/v1/claim-key", claimLimiter, async (req: Request, res: Response) => {
+  const { email, scanId, scannedUrl, aeoScore } = req.body as {
+    email?: string;
+    scanId?: string;
+    scannedUrl?: string;
+    aeoScore?: number;
+  };
+
+  if (!email || typeof email !== "string") {
+    res.status(400).json({ error: "Email is required", code: "MISSING_EMAIL" });
+    return;
+  }
+
+  // Basic email validation
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+    res.status(400).json({ error: "Invalid email format", code: "INVALID_EMAIL" });
+    return;
+  }
+
+  try {
+    // Timeout upstream request to prevent hanging
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10000);
+
+    const response = await fetch(`${MAIN_API_URL}/v1/licenses/free`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      signal: controller.signal,
+      body: JSON.stringify({
+        email: email.trim(),
+        source: "beacon",
+        metadata: {
+          scanId: scanId || null,
+          scannedUrl: scannedUrl || null,
+          aeoScore: aeoScore || null,
+          claimedAt: new Date().toISOString(),
+        },
+      }),
+    });
+
+    clearTimeout(timeout);
+
+    const json = (await response.json()) as Record<string, any>;
+
+    if (response.ok) {
+      res.json({
+        success: true,
+        data: json.data || json,
+        message: "BTS key issued. Check your email.",
+      });
+    } else {
+      res.status(response.status).json({
+        error: json.error || json.message || "Could not issue key",
+        code: json.code || "KEY_ISSUE_FAILED",
+      });
+    }
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Unknown error";
+    console.error("BTS key claim failed:", message);
+    res.status(502).json({
+      error: "Could not reach the identity service. Try again in a moment.",
+      code: "UPSTREAM_ERROR",
+    });
+  }
+});
+
+// POST /v1/scan/compare - Competitive comparison (up to 4 URLs)
+app.post("/v1/scan/compare", scanLimiter, async (req: Request, res: Response) => {
+  const { urls } = req.body as { urls?: string[] };
+
+  if (!urls || !Array.isArray(urls) || urls.length < 2 || urls.length > 4) {
+    res.status(400).json({
+      error: "Provide 2-4 URLs to compare",
+      code: "INVALID_URLS",
+    });
+    return;
+  }
+
+  // Validate all URLs
+  const validations = await Promise.all(urls.map((u) => validateUrl(u.trim())));
+  const invalid = validations.find((v) => !v.valid);
+  if (invalid) {
+    res.status(400).json({ error: invalid.error, code: "INVALID_URL" });
+    return;
+  }
+
+  try {
+    const results = await Promise.all(
+      validations.map((v) => runScan(v.normalizedUrl!))
+    );
+
+    // Store all scans
+    for (const result of results) {
+      scanStore.set(result.id, result);
+    }
+
+    // Build comparison
+    const comparison = {
+      id: uuidv4(),
+      generatedAt: new Date().toISOString(),
+      scans: results.map((r) => ({
+        id: r.id,
+        url: r.url,
+        overallScore: r.overallScore,
+        grade: r.grade,
+        gradeColor: r.gradeColor,
+        dimensions: Object.fromEntries(
+          Object.entries(r.dimensions).map(([key, dim]) => [
+            key,
+            { score: dim.score, maxScore: dim.maxScore, percentage: dim.percentage },
+          ])
+        ),
+        issueCount: r.topIssues.length,
+      })),
+      leader: results.reduce((best, r) =>
+        r.overallScore > best.overallScore ? r : best
+      ).url,
+      dimensionLeaders: {} as Record<string, string>,
+    };
+
+    // Find leader per dimension
+    const dimKeys = Object.keys(results[0].dimensions);
+    for (const dk of dimKeys) {
+      let bestScore = -1;
+      let bestUrl = "";
+      for (const r of results) {
+        const dim = (r.dimensions as any)[dk];
+        if (dim && dim.score > bestScore) {
+          bestScore = dim.score;
+          bestUrl = r.url;
+        }
+      }
+      comparison.dimensionLeaders[dk] = bestUrl;
+    }
+
+    res.json({ success: true, data: comparison });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Unknown error";
+    console.error("Comparison scan failed:", message);
+    res.status(500).json({
+      error: "One or more scans failed. Check that all URLs are publicly accessible.",
+      code: "COMPARE_FAILED",
+    });
+  }
+});
+
+// POST /v1/forge/generate - Generate fix package from scan ID
+app.post("/v1/forge/generate", (req: Request, res: Response) => {
+  const { scanId } = req.body as { scanId?: string };
+
+  if (!scanId) {
+    res.status(400).json({ error: "scanId is required", code: "MISSING_SCAN_ID" });
+    return;
+  }
+
+  const scan = scanStore.get(scanId);
+  if (!scan) {
+    res.status(404).json({ error: "Scan not found or expired", code: "NOT_FOUND" });
+    return;
+  }
+
+  // Generate fix metadata (code generation happens client-side for MVP)
+  const fixSummary = {
+    scanId: scan.id,
+    url: scan.url,
+    score: scan.overallScore,
+    grade: scan.grade,
+    totalIssues: scan.topIssues.length,
+    issuesByDimension: {} as Record<string, number>,
+    fixableChecks: [] as Array<{ id: string; name: string; dimension: string; fix: string }>,
+  };
+
+  for (const [dimKey, dim] of Object.entries(scan.dimensions)) {
+    const failed = dim.checks.filter((c) => !c.passed);
+    if (failed.length > 0) {
+      fixSummary.issuesByDimension[dim.name] = failed.length;
+    }
+  }
+
+  for (const issue of scan.topIssues) {
+    fixSummary.fixableChecks.push({
+      id: issue.title,
+      name: issue.title,
+      dimension: issue.dimension,
+      fix: issue.fix,
+    });
+  }
+
+  res.json({ success: true, data: fixSummary });
 });
 
 // 404 handler
