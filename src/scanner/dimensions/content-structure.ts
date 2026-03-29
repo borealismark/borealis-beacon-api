@@ -108,8 +108,10 @@ export function scoreContentStructure($: cheerio.CheerioAPI): DimensionResult {
 
   // --- Check 6: Sufficient content length (4 pts) ---
   // Count text from body, excluding nav/header/footer/scripts
-  $("script, style, nav, header, footer, noscript").remove();
-  const bodyText = $("body").text();
+  // Clone to avoid mutating the shared DOM (cross-linking needs nav/footer intact)
+  const $clone = cheerio.load($.html());
+  $clone("script, style, nav, header, footer, noscript").remove();
+  const bodyText = $clone("body").text();
   const wordCount = countWords(bodyText);
   checks.push({
     id: "content-length",
