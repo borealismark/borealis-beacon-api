@@ -1,0 +1,29 @@
+services:
+  - type: web
+    name: borealis-beacon-api
+    runtime: docker
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3002
+      - key: DB_PATH
+        value: /app/data/beacon.db
+      - key: BEACON_URL
+        value: https://beacon.borealisprotocol.ai
+      - key: EMAIL_FROM
+        value: "Borealis Beacon <noreply@borealisprotocol.ai>"
+      - key: ALLOWED_ORIGINS
+        value: "https://beacon.borealisprotocol.ai,https://borealisprotocol.ai,https://borealisterminal.com,https://borealis-beacon.pages.dev"
+      - key: RESEND_API_KEY
+        sync: false
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      - key: STRIPE_FORGE_WEBHOOK_SECRET
+        sync: false
+    disk:
+      name: beacon-data
+      mountPath: /app/data
+      sizeGB: 1
