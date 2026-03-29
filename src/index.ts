@@ -28,7 +28,7 @@ setInterval(() => {
 // CORS - allow Beacon frontend + all Borealis properties
 const allowedOrigins = (
   process.env.ALLOWED_ORIGINS ||
-  "http://localhost:3000,http://localhost:3001,https://borealisterminal.com,https://borealisprotocol.ai,https://borealismark.com,https://borealisacademy.com,https://beacon.borealisprotocol.ai"
+  "http://localhost:3000,http://localhost:3001,https://borealisterminal.com,https://borealisprotocol.ai,https://borealismark.com,https://borealisacademy.com,https://beacon.borealisprotocol.ai,https://borealis-beacon.pages.dev"
 ).split(",").map((o) => o.trim());
 
 app.use(
