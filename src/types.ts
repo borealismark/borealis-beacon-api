@@ -40,19 +40,40 @@ export interface Recommendation {
   estimatedGain: number;
 }
 
-export type ScoreGrade =
+export type AeoGrade =
   | "Strong AEO Authority"
   | "Functional Baseline"
   | "Visible Gaps"
   | "Pre-AEO";
+
+export type SeoGrade =
+  | "SEO Powerhouse"
+  | "Well Optimized"
+  | "Needs Work"
+  | "SEO Critical";
+
+// Keep backward compat alias
+export type ScoreGrade = AeoGrade;
+
+export interface ScoreBlock {
+  score: number;
+  maxScore: number;
+  percentage: number;
+  grade: string;
+  gradeColor: string;
+  dimensions: Record<string, DimensionResult>;
+  topIssues: Issue[];
+  recommendations: Recommendation[];
+}
 
 export interface ScanResult {
   id: string;
   url: string;
   scannedAt: string;
   durationMs: number;
+  // Legacy fields (AEO - backward compatible)
   overallScore: number;
-  grade: ScoreGrade;
+  grade: AeoGrade;
   gradeColor: string;
   dimensions: {
     schemaCoverage: DimensionResult;
@@ -63,6 +84,9 @@ export interface ScanResult {
   };
   topIssues: Issue[];
   recommendations: Recommendation[];
+  // Dual score blocks
+  aeo: ScoreBlock;
+  seo: ScoreBlock;
   meta: {
     title: string;
     description: string;
