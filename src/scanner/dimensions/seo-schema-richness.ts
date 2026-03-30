@@ -18,7 +18,7 @@ import { DimensionResult, Check } from "../../types";
 export function scoreSeoSchemaRichness($: cheerio.CheerioAPI): DimensionResult {
   const checks: Check[] = [];
 
-  // Parse all JSON-LD blocks
+  // Parse all JSON-LD blocks, flattening @graph arrays
   const jsonLdBlocks: any[] = [];
   $('script[type="application/ld+json"]').each((_, el) => {
     try {
@@ -26,6 +26,9 @@ export function scoreSeoSchemaRichness($: cheerio.CheerioAPI): DimensionResult {
       const parsed = JSON.parse(text);
       if (Array.isArray(parsed)) {
         jsonLdBlocks.push(...parsed);
+      } else if (parsed["@graph"] && Array.isArray(parsed["@graph"])) {
+        // Flatten @graph arrays into individual blocks
+        jsonLdBlocks.push(...parsed["@graph"]);
       } else {
         jsonLdBlocks.push(parsed);
       }
