@@ -155,8 +155,8 @@ export function scoreSeoLinkArchitecture(
 
   // 4. Unique destinations (5 pts)
   const uniqueCount = uniqueDestinations.size;
-  const goodUnique = uniqueCount >= 8;
-  const okUnique = uniqueCount >= 4;
+  const goodUnique = uniqueCount >= 5;
+  const okUnique = uniqueCount >= 2;
 
   checks.push({
     id: "seo-unique-destinations",
@@ -168,7 +168,7 @@ export function scoreSeoLinkArchitecture(
     detail: goodUnique
       ? `Links point to ${uniqueCount} unique internal pages - distributes authority across your site effectively`
       : okUnique
-        ? `Links point to ${uniqueCount} unique pages - expand to 8+ to build stronger topical clusters`
+        ? `Links point to ${uniqueCount} unique pages - expand to 5+ to build stronger topical clusters`
         : uniqueCount > 0
           ? `Only ${uniqueCount} unique destination${uniqueCount === 1 ? "" : "s"} - spread links across more pages to build site-wide authority`
           : "No unique internal destinations found",

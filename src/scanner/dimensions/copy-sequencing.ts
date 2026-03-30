@@ -1,8 +1,8 @@
 import * as cheerio from "cheerio";
 import { DimensionResult, Check } from "../../types";
 
-const QUESTION_STARTERS = /^(how|what|why|is|can|does|should|which|when|where|who|will|are|has|have|do|was|were|would|could|might)\b/i;
-const PROBLEM_INDICATORS = /\b(problem|challenge|issue|struggle|difficulty|hard to|fail|broken|risk|danger|mistake|wrong|miss|lack|without|need|want|trying|looking for)\b/i;
+const QUESTION_STARTERS = /^(how|what|why|is|can|does|should|which|when|where|who|will|are|has|have|do|was|were|would|could|might|your|you|if your|every|most|many)\b/i;
+const PROBLEM_INDICATORS = /\b(problem|challenge|issue|struggle|difficulty|hard to|fail|broken|risk|danger|mistake|wrong|miss|lack|without|need|want|trying|looking for|invisible|ignored|overlooked|missing|losing|lost|stuck|confused|uncertain|unclear|expensive|slow|unreliable|untrusted|not ready|falling behind|left out|skip|skipped|choose|choosing|cited|cite)\b/i;
 const BRAND_FIRST_PATTERN = /^[A-Z][a-zA-Z\s]+(is|are|was|were|offers|provides|delivers|helps|builds|creates|makes)\b/;
 
 function isUserIntentFirst(text: string): boolean {
